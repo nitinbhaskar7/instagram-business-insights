@@ -6,6 +6,7 @@ import axios from 'axios'
 import fs from 'fs'
 import Groq from 'groq-sdk'
 import { containsProfanity } from 'better-profane-words'
+import { performanceVelocity, viralityScore, weightedEngagement } from '../utils/helpers.js'
 
 
 dotenv.config()
@@ -570,6 +571,145 @@ app.get("/hide-comments", async (req, res) => {
     res.status(500).send({ error: "Failed to hide comments" });
   }
 })
+
+app.get('/post-performance/:mediaId', async (req, res) => {
+  const { mediaId } = req.params || process.env.TEST_MEDIA_ID;
+  const accessToken = process.env.TEST_ACCESS_TOKEN;
+  const instagramId = process.env.TEST_INSTA_ID;
+  try {
+      const urlFollowers = `https://graph.instagram.com/v25.0/${instagramId}/insights`;
+    const params = {
+      metric: "follower_demographics",
+      access_token: accessToken,
+      period: "lifetime",
+      metric_type: "total_value"
+    }
+
+    const responseFollowers = await axios.get(urlFollowers, { params });
+    console.log("Follower Demographics:", responseFollowers.data);
+
+    const followers = responseFollowers.data?.data[0]?.values[0]?.value?.total_followers || 1; // Avoid division by zero
+
+    const url = `https://graph.instagram.com/v25.0/${mediaId}?fields=like_count,comments_count,timestamp&access_token=${accessToken}`;
+    
+    const response = await axios.get(url);
+    const data = response.data;
+
+    console.log("Post Data:", data);
+
+    const engagementRate = weightedEngagement(data, followers);
+
+    console.log("Engagement Rate:", engagementRate.toFixed(2) + '%');
+
+    const perfVelocity = performanceVelocity(data);
+
+    console.log("Performance Velocity:", perfVelocity.toFixed(2) + ' interactions/hour');
+
+    const viralScore = viralityScore(data , followers);
+
+    console.log("Virality Score:", viralScore.toFixed(2) + '%');
+
+    
+
+
+    res.json({
+      raw: data,
+      insights: {
+        engagementRate: engagementRate.toFixed(2) + '%',
+        performanceVelocity: perfVelocity.toFixed(2) + ' interactions/hour',
+        viralityScore: viralScore.toFixed(2) + '%'
+      }
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message , response : err.response ? err.response.data : null });
+  }
+});
+
+
+app.get('/best-time', async (req, res) => {
+  const igUserId = process.env.TEST_INSTA_ID;
+  const accessToken = process.env.TEST_ACCESS_TOKEN;
+
+  try {
+    const url = `https://graph.instagram.com/v25.0/${igUserId}/insights?metric=online_followers&period=lifetime&access_token=${accessToken}`;
+    
+    const response = await axios.get(url);
+
+    const data = response.data ;
+
+    console.log("Raw Data:", JSON.stringify(data, null, 4));
+
+    // Find peak hour
+    let bestHour = Object.keys(data).reduce((a, b) =>
+      data[a] > data[b] ? a : b
+    );
+
+    res.json({
+      hourlyData: data,
+      bestHour: `${bestHour}:00`
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/follower-growth', async (req, res) => {
+  const igUserId = process.env.TEST_INSTA_ID;
+  const accessToken = process.env.TEST_ACCESS_TOKEN;
+
+  try {
+    const url = `https://graph.instagram.com/v25.0/${igUserId}/insights?metric=follower_count&period=day&access_token=${accessToken}`;
+    
+    const response = await axios.get(url);
+
+    const values = response.data;
+
+    console.log("Raw Data:", JSON.stringify(values, null, 4));
+
+    const growth = values.map((v, i) => {
+      if (i === 0) return { date: v.end_time, growth: 0 };
+      return {
+        date: v.end_time,
+        growth: v.value - values[i - 1].value
+      };
+    });
+
+    res.json(growth);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/reel-retention/:mediaId', async (req, res) => {
+  const { mediaId } = req.params;
+  const accessToken = process.env.TEST_ACCESS_TOKEN;
+
+  try {
+    const url = `https://graph.instagram.com/v25.0/${mediaId}/insights?metric=plays,reach,total_interactions,video_avg_time_watched&access_token=${accessToken}`;
+    
+    const response = await axios.get(url);
+
+    const metrics = {};
+    response.data.data.forEach(m => {
+      metrics[m.name] = m.values[0].value;
+    });
+
+    const retentionScore = metrics.video_avg_time_watched
+      ? (metrics.video_avg_time_watched / 30) * 100 // assume 30s reel
+      : 0;
+
+    res.json({
+      metrics,
+      retentionScore: retentionScore.toFixed(2) + '%'
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 
 app.listen(port, () => {
