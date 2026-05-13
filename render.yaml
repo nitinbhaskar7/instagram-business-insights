@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: render-node-server
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm run start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
