@@ -13,7 +13,6 @@ import qs from 'qs';
 import { connectDB } from '../config/db.js'
 import { instagramAuthMiddleware } from '../middleware/user.middleware.js'
 import { insertAllposts } from '../helper/insertPosts.js'
-import { User } from '../models/User.js'
 dotenv.config()
 
 const app = express()
@@ -55,74 +54,22 @@ app.all("/webhook", instagramAuthMiddleware, async (req, res) => {
                 if (event.message.read) {
                   console.log("Message read event received for message ID:", event.message.read.mid);
                   return;
-                }
-                if (event.message && event.message.text) {
+                } 
+                if (event.message && event.message.text) { 
                   console.log("DM received:");
                   console.log("Sender ID:", event.sender.id);
                   console.log("Message:", event.message.text);
                   // Do not reply for is_echo messages to avoid infinite loops
-
                   if (event.message.is_echo) {
-                    try {
-                         const username = event.message.text.trim();
-                    const senderId = event.sender.id;
-
-                      const res = await User.findOneAndUpdate(
-                        { username: username },
-                        {
-                          webhookId: senderId
-                        })
-
-                      if (!res) {
-                        console.log("User not found in DB for auto DM setup, skipping auto DM setup for this user.");
-                        return;
-                      }
-                      console.log(`Updated user ${username} with webhook ID ${senderId}`);
-                      return;
-                    } catch (error) {
-                      console.log("USer not found in DB for auto DM setup, skipping auto DM setup for this user.");
-                      return;
-                    }
+                    console.log("Echo message received, skipping auto-reply.");
                     return;
                   }
-
-
-                  // if (event.message.is_echo) {
-                  //   console.log("Echo message received, skipping auto-reply.");
-                  //   return;
-                  // }
 
                   // Auto-reply filler 
                   // Get User preferences from DB and decide whether to auto-reply or not.
 
-                  if (event.recipient.id === process.env.RECIPIENT_ID) {
-                    // message contains the username and the sender id should be stored in the DB 
-                    const username = event.message.text.trim();
-                    const senderId = event.sender.id;
 
-                    // Update the user in DB with the senderId and username
-                    try {
-                      const res = await User.findOneAndUpdate(
-                        { username: username },
-                        {
-                          webhookId: senderId
-                        })
-
-                      if (!res) {
-                        console.log("User not found in DB for auto DM setup, skipping auto DM setup for this user.");
-                        return;
-                      }
-                      console.log(`Updated user ${username} with webhook ID ${senderId}`);
-                      return;
-                    } catch (error) {
-                      console.log("USer not found in DB for auto DM setup, skipping auto DM setup for this user.");
-                      return;
-                    }
-
-                  }
-
-
-                  const userPref = await axios.get(`${process.env.BASE_URL}/api/users/${event.recipient.id}`);
+                  const userPref = await axios.get(`${process.env.BASE_URL}/api/users/${process.env.TEST_INSTA_ID}`);
 
                   if (userPref.data.enableAutoDM === "no") {
                     console.log("Auto-DM is disabled for this user, skipping auto-reply.");
@@ -156,7 +103,7 @@ app.all("/webhook", instagramAuthMiddleware, async (req, res) => {
                     message = chatCompletion.choices[0].message.content.trim();
                   }
 
-                  const replyUrl = `https://graph.instagram.com/v25.0/${userPref.data.userId}/messages`;
+                  const replyUrl = `https://graph.instagram.com/v25.0/${process.env.TEST_INSTA_ID}/messages`;
                   // Example auto-reply (replace with actual reply logic)
                   const replyResponse = await axios.post(replyUrl, {
                     message: {
@@ -167,7 +114,7 @@ app.all("/webhook", instagramAuthMiddleware, async (req, res) => {
                     }
                   }, {
                     headers: {
-                      'Authorization': `Bearer ${userPref.data.access_token}`
+                      'Authorization': `Bearer ${process.env.TEST_ACCESS_TOKEN}`
                     }
                   });
 
@@ -297,8 +244,8 @@ app.get("/redirect", async (req, res) => {
     const code = req.query.code + "#_";
 
     const url = "https://api.instagram.com/oauth/access_token"
-
-
+ 
+    
 
     const data = qs.stringify({
       client_id: process.env.APP_ID,
@@ -306,7 +253,7 @@ app.get("/redirect", async (req, res) => {
       grant_type: 'authorization_code',
       redirect_uri: process.env.REDIRECT_URI,
       code: code
-    });
+    }); 
 
 
     const response = await axios.post(
@@ -359,7 +306,7 @@ app.get("/redirect", async (req, res) => {
     await insertAllposts(meResponse.data.id, responseLong.data.access_token);
 
     return res.redirect(`myapp://auth?token=${responseLong.data.access_token}&instagram_id=${meResponse.data.id}&username=${meResponse.data.username}`);
-
+ 
   } catch (error) {
     console.log(error.request)
     return res.status(500).send({ error: "Failed to exchange code for access token", details: error.response ? error.response.data : error.message });
@@ -679,7 +626,7 @@ app.get('/best-time', async (req, res) => {
   }
 });
 app.get('/follower-growth', async (req, res) => {
-  const igUserId = req.query.instagramId || process.env.TEST_INSTA_ID;
+  const igUserId = req.query.instagramId  || process.env.TEST_INSTA_ID;
   const accessToken = process.env.TEST_ACCESS_TOKEN;
 
   try {
@@ -776,9 +723,9 @@ app.get('/post-performance', async (req, res) => {
 
     const responseFollowers = await axios.get(urlFollowers, { params });
     console.log("Follower Demographics:", responseFollowers.data);
-
+    
     // const followers = responseFollowers.data?.data?[0]?.values[0]?.value?.total_followers || 1; // Avoid division by zero
-    const followers = 168; // Avoid division by zero
+    const followers =  168; // Avoid division by zero
     const url = `https://graph.instagram.com/v25.0/${mediaId}?fields=like_count,comments_count,timestamp&access_token=${accessToken}`;
 
     const response = await axios.get(url);
@@ -856,7 +803,7 @@ app.get('/analytics/comment-sentiment', async (req, res) => {
     console.log(allComments)
 
     if (!allComments || allComments.length === 0) {
-
+     
       return res.status(200).send({
         mediaId,
         total_comments: 0,
