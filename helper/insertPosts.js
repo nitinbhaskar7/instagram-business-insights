@@ -4,7 +4,7 @@ import { Post } from "../models/Post.js";
 export async function insertAllposts(instagramId, accessToken) {
     try {
 
-
+ 
         if (!accessToken) {
             throw new Error("Access token is required");
         }

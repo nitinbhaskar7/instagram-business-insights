@@ -6,7 +6,7 @@ import axios from 'axios'
 import fs from 'fs'
 import Groq from 'groq-sdk'
 import { containsProfanity } from 'better-profane-words'
-import { performanceVelocity, viralityScore, weightedEngagement } from '../utils/helpers.js'
+import { performanceVelocity, viralityScore, weightedEngagement, formatTimeSeries, computeSeriesStats } from '../utils/helpers.js'
 import userRoutes from "../routes/userRoutes.js";
 import postRoutes from "../routes/postRoutes.js";
 import qs from 'qs';
@@ -500,6 +500,83 @@ app.get("/insights/reach", async (req, res) => {
     res.status(500).send({ error: "Failed to fetch reach insights" });
   }
 })
+
+// Time-series endpoints returning normalized series + AI overview
+app.get('/insights/time_series/:metric', async (req, res) => {
+  try {
+    const metric = req.params.metric; // expect 'reach' or 'impressions'
+    if (!['reach'].includes(metric)) {
+      return res.status(400).send({ error: 'Unsupported metric. Use reach or impressions.' });
+    } 
+
+    const accessToken = req.query.access_token || process.env.TEST_ACCESS_TOKEN;
+    const instagramId = req.query.instagramId || process.env.TEST_INSTA_ID;
+    const days = parseInt(req.query.days) || 30;
+
+    if (!accessToken) return res.status(400).send({ error: 'Access token is required' });
+    if (!instagramId) return res.status(400).send({ error: 'Instagram ID is required' });
+
+    const url = `https://graph.instagram.com/v25.0/${instagramId}/insights`;
+    const params = {
+      metric: metric,
+      access_token: accessToken,
+      period: 'day',
+      metric_type: 'time_series',
+      since: Math.floor(Date.now() / 1000) - days * 24 * 3600
+    };
+
+    const response = await axios.get(url, { params });
+    const raw = response.data;
+
+    // IG returns { data: [ { name, period, values: [...] } ] }
+    const metricObj = (raw && raw.data && raw.data[0]) || raw;
+    const series = formatTimeSeries(metricObj);
+    const stats = computeSeriesStats(series);
+
+    // Ask Groq for a structured AI overview: JSON { summary, recommendation }
+    const prompt = `You are an analytics assistant. Given a daily time-series for the metric "${metric}" and these stats: avg=${stats.avg.toFixed(2)}, max=${stats.max}, min=${stats.min}, trend=${stats.trend}, peakDate=${stats.peakDate}. Provide a JSON object with exactly two fields:
+  {
+    "summary": "<3-4 sentence summary describing the recent trend and the peak>",
+    "recommendation": "<one concise recommendation to increase this growth metric (single sentence)>"
+  }
+Return ONLY the JSON object, with no markdown or extra text.`;
+
+    let aiOverview = { summary: null, recommendation: null };
+    try {
+      const chatCompletion = await groq.chat.completions.create({
+        messages: [
+          { role: 'system', content: 'You are a concise analytics assistant that returns JSON only.' },
+          { role: 'user', content: prompt }
+        ],
+        model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+        temperature: 0.2,
+        max_completion_tokens: 200,
+        stream: false
+      });
+
+      const rawContent = chatCompletion.choices[0].message.content;
+      const cleaned = rawContent.replace(/```json|```/g, '').trim();
+      try {
+        const parsed = JSON.parse(cleaned);
+        aiOverview.summary = parsed.summary || null;
+        aiOverview.recommendation = parsed.recommendation || null;
+      } catch (parseErr) {
+        console.error('Failed to parse AI JSON overview:', parseErr, 'raw:', rawContent);
+        aiOverview.summary = rawContent.replace(/```/g, '').trim();
+      }
+    } catch (aiErr) {
+      console.error('AI overview error:', aiErr);
+      aiOverview.summary = null;
+      aiOverview.recommendation = null;
+    }
+
+    return res.status(200).send({ metric, series, stats, ai_overview: aiOverview, raw });
+
+  } catch (error) {
+    console.error('Error fetching time-series insights:', error);
+    return res.status(500).send({ error: 'Failed to fetch time-series insights', details: error.response ? error.response.data : error.message });
+  }
+});
 
 app.get("/posts", async (req, res) => {
   try {

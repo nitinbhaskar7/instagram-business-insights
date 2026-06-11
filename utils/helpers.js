@@ -38,3 +38,50 @@ export function audienceQuality(posts, followers) {
 
   return (avgEngagement / followers) * 100;
 }
+
+// Convert IG time-series metric object into normalized series: [{ts, value}, ...]
+export function formatTimeSeries(metricObj) {
+  // metricObj commonly has a `values` array with { end_time, value } or {timestamp, value}
+  const values = metricObj?.values || metricObj?.data || [];
+
+  return (values || []).map((v) => {
+    const ts = v.end_time || v.timestamp || v.time || v.date || v.ts;
+    // ensure ISO string
+    const iso = ts ? new Date(ts).toISOString() : null;
+    const value = typeof v.value === 'object' ? v.value.total || 0 : v.value || 0;
+    return { ts: iso, value };
+  }).filter(p => p.ts !== null);
+}
+
+// Compute simple statistics for a series
+export function computeSeriesStats(series) {
+  if (!series || series.length === 0) return {
+    avg: 0, max: 0, min: 0, sum: 0, trend: 'flat', peakDate: null, points: 0
+  };
+
+  const values = series.map(s => Number(s.value) || 0);
+  const sum = values.reduce((a, b) => a + b, 0);
+  const avg = sum / values.length;
+  const max = Math.max(...values);
+  const min = Math.min(...values);
+  const peakIndex = values.indexOf(max);
+  const peakDate = series[peakIndex]?.ts || null;
+
+  // Simple trend: compare first and last value
+  const first = values[0];
+  const last = values[values.length - 1];
+  const changePct = first === 0 ? (last === 0 ? 0 : 1) : (last - first) / Math.abs(first);
+  let trend = 'flat';
+  if (changePct > 0.05) trend = 'increasing';
+  else if (changePct < -0.05) trend = 'decreasing';
+
+  return {
+    avg,
+    max,
+    min,
+    sum,
+    trend,
+    peakDate,
+    points: values.length
+  };
+}
