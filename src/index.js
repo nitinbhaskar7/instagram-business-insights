@@ -570,6 +570,17 @@ Return ONLY the JSON object, with no markdown or extra text.`;
       aiOverview.recommendation = null;
     }
 
+    // return every series.end_time as date : currently it is "2026-05-13T07:00:00+0000"  to "25-09-2024" for better readability in the App
+
+    series.forEach((point) => {
+      const date = new Date(point.ts);
+      const formatted = `${date.getDate()}-${date.getMonth() + 1}-${date.getFullYear()}`;
+      point.date = formatted;
+      // remove ts from response to avoid confusion in the App and use date instead
+      delete point.ts;
+    });
+
+
     return res.status(200).send({ metric, series, stats, ai_overview: aiOverview, raw });
 
   } catch (error) {
