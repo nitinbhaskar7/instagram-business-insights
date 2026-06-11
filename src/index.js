@@ -536,7 +536,7 @@ app.get('/insights/time_series/:metric', async (req, res) => {
     // Ask Groq for a structured AI overview: JSON { summary, recommendation }
     const prompt = `You are an analytics assistant. Given a daily time-series for the metric "${metric}" and these stats: avg=${stats.avg.toFixed(2)}, max=${stats.max}, min=${stats.min}, trend=${stats.trend}, peakDate=${stats.peakDate}. Provide a JSON object with exactly two fields:
   {
-    "summary": "<3-4 sentence summary describing the recent trend and the peak>",
+    "summary": "<3-4 sentence summary describing the recent trend and the peak(Mention the date only in dd-mm-yyyy format) in the data)>",
     "recommendation": "<one concise recommendation to increase this growth metric (single sentence)>"
   }
 Return ONLY the JSON object, with no markdown or extra text.`;
